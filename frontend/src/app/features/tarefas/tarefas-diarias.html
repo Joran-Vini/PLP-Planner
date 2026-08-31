@@ -75,11 +75,16 @@
   @if (exibindoModalTarefa()) {
     <div class="modal-overlay">
       <div class="modal-card">
-        <h2>Nova Tarefa</h2>
+        <h2>{{ tituloModalTarefa() }}</h2>
         <form [formGroup]="formTarefa" (ngSubmit)="salvarTarefa()">
           <label class="campo">
             <span>Descrição</span>
             <input type="text" formControlName="descricao" placeholder="Ex: Finalizar documentação" />
+          </label>
+
+          <label class="campo">
+            <span>Data</span>
+            <input type="date" formControlName="data" />
           </label>
 
           <div class="campo-linha">
@@ -150,7 +155,7 @@
           }
 
           <label class="campo">
-            <span>Status Inicial</span>
+            <span>Status</span>
             <select formControlName="status">
               @for (st of statusOpcoes; track st) {
                 <option [value]="st">{{ st | titlecase }}</option>
@@ -159,8 +164,10 @@
           </label>
 
           <div class="acoes-modal">
-            <button type="button" class="botao botao--secundario" (click)="exibindoModalTarefa.set(false)">Cancelar</button>
-            <button type="submit" class="botao botao--primario">Salvar Tarefa</button>
+            <button type="button" class="botao botao--secundario" (click)="fecharModalTarefa()">Cancelar</button>
+            <button type="submit" class="botao botao--primario">
+              {{ tarefaEmEdicao() ? 'Salvar alterações' : 'Salvar Tarefa' }}
+            </button>
           </div>
         </form>
       </div>
@@ -181,9 +188,15 @@
 
             @for (tarefa of dia.itens; track tarefa.id) {
               <div class="mini-tarefa" [style.border-left-color]="corDaCategoria(tarefa.categoria_id)">
-                <span class="mini-tarefa__quando">
-                  {{ tarefa.horario_inicio || (tarefa.turno | titlecase) }}
-                </span>
+                <div class="mini-tarefa__topo">
+                  <span class="mini-tarefa__quando">
+                    {{ tarefa.horario_inicio || (tarefa.turno | titlecase) }}
+                  </span>
+                  <span class="mini-tarefa__acoes">
+                    <button type="button" class="btn-acao" (click)="abrirModalEdicaoTarefa(tarefa)" title="Editar" aria-label="Editar tarefa">✎</button>
+                    <button type="button" class="btn-acao btn-acao--perigo" (click)="excluirTarefa(tarefa)" title="Excluir" aria-label="Excluir tarefa">×</button>
+                  </span>
+                </div>
                 <span class="mini-tarefa__desc" [class.concluida]="tarefa.status === 'executada'">
                   {{ tarefa.descricao }}
                 </span>
@@ -228,11 +241,15 @@
                     <span class="badge-prioridade badge-prioridade--{{ tarefa.prioridade }}">{{ tarefa.prioridade }}</span>
                   </div>
                 </div>
-                <select class="status-select status-select--{{ tarefa.status.replace(' ', '-') }}" [value]="tarefa.status" (change)="mudarStatusTarefa(tarefa, $any($event.target).value)">
-                  @for (st of statusOpcoes; track st) {
-                    <option [value]="st" [selected]="st === tarefa.status">{{ st }}</option>
-                  }
-                </select>
+                <div class="card-tarefa__controles">
+                  <select class="status-select status-select--{{ tarefa.status.replace(' ', '-') }}" [value]="tarefa.status" (change)="mudarStatusTarefa(tarefa, $any($event.target).value)">
+                    @for (st of statusOpcoes; track st) {
+                      <option [value]="st" [selected]="st === tarefa.status">{{ st }}</option>
+                    }
+                  </select>
+                  <button type="button" class="btn-acao" (click)="abrirModalEdicaoTarefa(tarefa)" title="Editar" aria-label="Editar tarefa">✎</button>
+                  <button type="button" class="btn-acao btn-acao--perigo" (click)="excluirTarefa(tarefa)" title="Excluir" aria-label="Excluir tarefa">×</button>
+                </div>
               </div>
             }
           </div>
@@ -257,11 +274,15 @@
                     </div>
                   </div>
 
-                  <select class="status-select status-select--{{ tarefa.status.replace(' ', '-') }}" [value]="tarefa.status" (change)="mudarStatusTarefa(tarefa, $any($event.target).value)">
-                    @for (st of statusOpcoes; track st) {
-                      <option [value]="st" [selected]="st === tarefa.status">{{ st }}</option>
-                    }
-                  </select>
+                  <div class="card-tarefa__controles">
+                    <select class="status-select status-select--{{ tarefa.status.replace(' ', '-') }}" [value]="tarefa.status" (change)="mudarStatusTarefa(tarefa, $any($event.target).value)">
+                      @for (st of statusOpcoes; track st) {
+                        <option [value]="st" [selected]="st === tarefa.status">{{ st }}</option>
+                      }
+                    </select>
+                    <button type="button" class="btn-acao" (click)="abrirModalEdicaoTarefa(tarefa)" title="Editar" aria-label="Editar tarefa">✎</button>
+                    <button type="button" class="btn-acao btn-acao--perigo" (click)="excluirTarefa(tarefa)" title="Excluir" aria-label="Excluir tarefa">×</button>
+                  </div>
                 </div>
               }
             </div>

@@ -15,7 +15,7 @@ import {
 import { CategoriaService } from '../../core/services/categoria.service';
 import { LembreteService } from '../../core/services/lembrete.service';
 import { TarefaService } from '../../core/services/tarefa.service';
-import { formatarDataLocal, paraDataApi } from '../../core/utils/date-format.util';
+import { formatarDataLocal, paraDataApi, paraDataInput } from '../../core/utils/date-format.util';
 import { intervaloSemana } from '../../core/utils/date-range.util';
 
 type AbaTarefas = 'agenda' | 'lembretes';
@@ -97,6 +97,7 @@ export class TarefasDiarias {
   protected readonly lembretes = signal<Lembrete[]>([]);
   protected readonly categorias = signal<Categoria[]>([]);
   protected readonly exibindoModalTarefa = signal(false);
+  protected readonly tarefaEmEdicao = signal<Tarefa | null>(null);
   protected readonly tipoAgendamento = signal<'horario' | 'turno'>('horario');
   protected readonly abaAtiva = signal<AbaTarefas>('agenda');
   protected readonly modoAgenda = signal<ModoAgenda>('dia');
@@ -104,6 +105,10 @@ export class TarefasDiarias {
 
   protected readonly categoriaPorId = computed(
     () => new Map(this.categorias().map((c) => [c.id, c]))
+  );
+
+  protected readonly tituloModalTarefa = computed(() =>
+    this.tarefaEmEdicao() ? 'Editar Tarefa' : 'Nova Tarefa'
   );
 
   protected readonly dataFormatada = computed(() => {
@@ -346,9 +351,44 @@ export class TarefasDiarias {
     this.carregarDadosDoDia();
   }
 
+  private readonly padroesFormTarefa = {
+    descricao: '',
+    data: '',
+    categoriaId: 1,
+    prioridade: 'média' as PrioridadeTarefa,
+    status: 'pendente' as StatusTarefa,
+    horarioInicio: '09:00',
+    duracao: '1h' as DuracaoTarefa,
+    turno: 'manhã' as TurnoTarefa,
+  };
+
   protected abrirModalNovaTarefa(): void {
-    this.formTarefa.patchValue({ data: this.dataIso() });
+    this.tarefaEmEdicao.set(null);
+    this.tipoAgendamento.set('horario');
+    this.formTarefa.reset({ ...this.padroesFormTarefa, data: this.dataIso() });
     this.exibindoModalTarefa.set(true);
+  }
+
+  protected abrirModalEdicaoTarefa(tarefa: Tarefa): void {
+    this.tarefaEmEdicao.set(tarefa);
+    this.tipoAgendamento.set(tarefa.turno ? 'turno' : 'horario');
+    this.formTarefa.reset({
+      ...this.padroesFormTarefa,
+      descricao: tarefa.descricao,
+      data: paraDataInput(String(tarefa.data)),
+      categoriaId: tarefa.categoria_id,
+      prioridade: tarefa.prioridade,
+      status: tarefa.status,
+      horarioInicio: tarefa.horario_inicio ?? '09:00',
+      duracao: tarefa.duracao ?? '1h',
+      turno: tarefa.turno ?? 'manhã',
+    });
+    this.exibindoModalTarefa.set(true);
+  }
+
+  protected fecharModalTarefa(): void {
+    this.exibindoModalTarefa.set(false);
+    this.tarefaEmEdicao.set(null);
   }
 
   protected tarefasDoBloco(bloco: BlocoTempo): Tarefa[] {
@@ -413,12 +453,10 @@ export class TarefasDiarias {
 
     const ehHorario = this.tipoAgendamento() === 'horario';
 
-    const dataIsoTime = `${v.data}T00:00:00Z`;
-
     const payload: TarefaPayload = {
       descricao: v.descricao.trim(),
       categoria_id: Number(v.categoriaId),
-      data: dataIsoTime,
+      data: paraDataApi(v.data),
       status: v.status,
       prioridade: v.prioridade,
       ...(ehHorario
@@ -431,32 +469,50 @@ export class TarefasDiarias {
           }),
     };
 
-    this.tarefaService.criar(payload).subscribe({
-      next: (tarefaCriada) => {
-        
-        const dataFormatadaCriada = tarefaCriada.data.substring(0, 10);
-        if (dataFormatadaCriada !== this.dataIso()) {
-          const [ano, mes, dia] = dataFormatadaCriada.split('-').map(Number);
+    const emEdicao = this.tarefaEmEdicao();
+    const requisicao = emEdicao
+      ? this.tarefaService.atualizar(emEdicao.id, payload)
+      : this.tarefaService.criar(payload);
+
+    requisicao.subscribe({
+      next: (tarefaSalva) => {
+        const dataSalva = String(tarefaSalva.data).slice(0, 10);
+
+        if (dataSalva !== this.dataIso()) {
+          const [ano, mes, dia] = dataSalva.split('-').map(Number);
           this.dataReferencia.set(new Date(ano, mes - 1, dia));
           this.carregarDadosDoDia();
+        } else if (emEdicao) {
+          const aplicar = (lista: Tarefa[]) =>
+            lista.map((t) => (t.id === tarefaSalva.id ? tarefaSalva : t));
+          this.tarefas.update(aplicar);
+          this.tarefasSemana.update(aplicar);
         } else {
-          this.tarefas.update((lista) => [...lista, tarefaCriada]);
+          this.tarefas.update((lista) => [...lista, tarefaSalva]);
           if (this.modoAgenda() === 'semana') {
-            this.tarefasSemana.update((lista) => [...lista, tarefaCriada]);
+            this.tarefasSemana.update((lista) => [...lista, tarefaSalva]);
           }
         }
 
-        this.formTarefa.reset({
-          categoriaId: 1,
-          prioridade: 'média',
-          status: 'pendente',
-          horarioInicio: '09:00',
-          duracao: '1h',
-          turno: 'manhã',
-        });
-        this.exibindoModalTarefa.set(false);
+        this.fecharModalTarefa();
       },
       error: (err) => console.error('Erro ao salvar tarefa no backend:', err),
+    });
+  }
+
+  protected excluirTarefa(tarefa: Tarefa): void {
+    if (!confirm(`Excluir a tarefa "${tarefa.descricao}"?`)) return;
+
+    this.tarefaService.excluir(tarefa.id).subscribe({
+      next: () => {
+        const remover = (lista: Tarefa[]) => lista.filter((t) => t.id !== tarefa.id);
+        this.tarefas.update(remover);
+        this.tarefasSemana.update(remover);
+        if (this.tarefaEmEdicao()?.id === tarefa.id) {
+          this.fecharModalTarefa();
+        }
+      },
+      error: (err) => console.error('Erro ao excluir tarefa no backend:', err),
     });
   }
 
